@@ -355,6 +355,113 @@ export const handleFriendRequests = functions.firestore
     }
 
 
+    export const sync = functions.https.onCall( async(input, context) =>{
+
+        const uid = context.auth.uid
+        let syncTimeStamp
+        const response = {
+            chats : [],
+            events: []
+        }
+
+        if(uid!==null){
+            console.log(uid)
+            const res = (await db.collection("users").where("id", "==", uid).get()).docs
+
+            console.log(res[0])            
+
+            const info = res[0].data()
+
+            const username  = info.username
+            try{
+                syncTimeStamp = info.syncTimeStamp
+                console.log("Timestamp = "+ syncTimeStamp)
+            }catch(err){
+                console.log("sync timestamp not defined")
+            }
+
+
+            try{
+                //Only one document conversationsm2m
+                const m2m = (await db.collection("users/"+ username + "/conversationsM2M").get()).docs[0].data()
+
+                console.log(m2m)
+
+                for(const con of m2m.conversationsM2M){
+                    
+                    const msgs = await db.collection("groups/"+con+"/chats")
+                    .where("timeStamp", ">=", syncTimeStamp)
+                    .get()
+                    
+                    for(const msg of msgs.docs){
+                        if(msg.data().senderID !== username)
+                            response.chats.push(msg)
+                    }
+
+                    const events = await db.collection("groups/"+con+"/events").where("timeStamp", ">=", syncTimeStamp).get()
+                    
+                    for(const event of events.docs){
+                        if(event.data().senderID !== username)
+                            response.events.push(event)
+                    }
+
+                }
+            }catch(err){
+                //If user has no m2m conversations
+                console.log("No M2M conversations")
+            }
+
+            const c121 = (await db.collection("messages121").where("receiverID", "==", username)
+            .where("timeStamp", ">=", syncTimeStamp).get()).docs;
+
+            c121.forEach(function(msg){
+                response.chats.push(msg)
+            })
+
+            //TODO - Add for 121 events
+
+
+            
+            return db.collection("users").doc(username)
+            .update("syncTimeStamp", admin.firestore.FieldValue.serverTimestamp())
+            .then((result) => {
+                return {
+                    status : "success",
+                    data: response   
+                }
+            })
+        }
+        else{
+            return {
+                status: "failure"
+            }
+        }
+        
+    })
+
+
+
+    // export const timestampTest = functions.https.onCall(async (request)=> {
+        
+    //     const response = {
+    //         list: []
+    //     }
+        
+    //     const time1 = (await db.collection("test").get()).docs[0].data().time
+
+        
+
+    //     console.log("Test"+time1);
+        
+    //     const res = (await db.collection("time").where("time", ">=", time1).get()).docs
+    
+    //     for(const d of res)
+    //         response.list.push(d)
+
+    //     return response
+    // })
+
+
         /*
 
     
